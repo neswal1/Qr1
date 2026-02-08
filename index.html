@@ -6,6 +6,22 @@
     <title>3D Heart Gesture & Head Nod</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        
+        /* Giao diện nhập mật khẩu */
+        #password-screen {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #000; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 9999;
+            transition: opacity 0.8s ease;
+        }
+        #password-screen input {
+            padding: 12px 20px; font-size: 1.2rem; border-radius: 30px;
+            border: 1px solid #f59cff; background: rgba(245, 156, 255, 0.1);
+            color: #f59cff; outline: none; text-align: center; width: 250px;
+            box-shadow: 0 0 15px rgba(245, 156, 255, 0.2);
+        }
+        #password-screen p { color: #f59cff; letter-spacing: 2px; margin-bottom: 20px; font-size: 0.9rem; }
+
         #canvas-container { width: 100vw; height: 100vh; }
         #video-container {
             position: absolute; bottom: 20px; right: 20px;
@@ -15,42 +31,34 @@
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         
-        /* Giao diện nút bấm khi gật đầu thành công */
         #portal-btn {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%) scale(0);
-            padding: 20px 40px;
-            background: rgba(245, 156, 255, 0.2);
-            color: #f59cff;
-            border: 2px solid #f59cff;
-            border-radius: 50px;
-            font-size: 1.5rem;
-            cursor: pointer;
-            backdrop-filter: blur(10px);
+            padding: 20px 40px; background: rgba(245, 156, 255, 0.2);
+            color: #f59cff; border: 2px solid #f59cff; border-radius: 50px;
+            font-size: 1.5rem; cursor: pointer; backdrop-filter: blur(10px);
             transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 100;
-            display: none;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            box-shadow: 0 0 30px rgba(245, 156, 255, 0.4);
+            z-index: 100; display: none; text-transform: uppercase;
+            letter-spacing: 2px; box-shadow: 0 0 30px rgba(245, 156, 255, 0.4);
         }
         #portal-btn.show { display: block; transform: translate(-50%, -50%) scale(1); }
-        #portal-btn:hover { background: #f59cff; color: #000; }
-
-        .ui-overlay {
-            position: absolute; top: 20px; left: 20px; color: #f59cff;
-            pointer-events: none; z-index: 10;
-        }
+        .ui-overlay { position: absolute; top: 20px; left: 20px; color: #f59cff; pointer-events: none; z-index: 10; }
     </style>
 </head>
 <body>
+
+    <div id="password-screen">
+        <p>IDENTIFICATION REQUIRED</p>
+        <input type="password" id="pw-input" placeholder="Nhập mật khẩu..." autofocus>
+        <div id="error-msg" style="color: red; font-size: 0.8rem; margin-top: 10px; display: none;">Mật khẩu sai rồi!</div>
+    </div>
 
     <div class="ui-overlay">
         <h2 style="margin:0; font-weight: 300;">HEART CORE</h2>
         <p id="hint" style="color: white; font-size: 0.8rem;">Phá trái tim & Gật đầu để mở Cổng</p>
     </div>
 
-    <button id="portal-btn" onclick="goToNextStep()">💌ấn vào đây💌</button>
+    <button id="portal-btn" onclick="goToNextStep()">MỞ CODE MỚI</button>
 
     <div id="video-container"><video id="webcam" autoplay playsinline></video></div>
     <div id="canvas-container"></div>
@@ -62,15 +70,39 @@
     <script type="module">
         import * as THREE from 'three';
 
+        // CẤU HÌNH MẬT KHẨU TẠI ĐÂY
+        const SECRET_KEY = "123"; 
+
+        const pwInput = document.getElementById('pw-input');
+        const pwScreen = document.getElementById('password-screen');
+        const errorMsg = document.getElementById('error-msg');
+
+        pwInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                if (pwInput.value === SECRET_KEY) {
+                    startExperience();
+                } else {
+                    errorMsg.style.display = 'block';
+                    pwInput.value = '';
+                }
+            }
+        });
+
         let scene, camera, renderer, particles;
         let particleData = [];
         const PARTICLE_COUNT = 7000;
-        
-        let targetExp = 0, currentExp = 0;
-        let lastNoseY = 0;
-        let isNodding = false;
+        let targetExp = 0, currentExp = 0, lastNoseY = 0, isNodding = false;
 
-        // Khởi tạo Three.js
+        function startExperience() {
+            pwScreen.style.opacity = '0';
+            setTimeout(() => {
+                pwScreen.style.display = 'none';
+                initThree();
+                setupAI();
+                animate();
+            }, 800);
+        }
+
         function initThree() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -114,8 +146,8 @@
 
             faceMesh.onResults(res => {
                 if (res.multiFaceLandmarks && res.multiFaceLandmarks[0]) {
-                    const nose = res.multiFaceLandmarks[0][1]; // Điểm mũi
-                    if (lastNoseY && nose.y - lastNoseY > 0.015) { // Phát hiện chuyển động đi xuống nhanh (gật)
+                    const nose = res.multiFaceLandmarks[0][1];
+                    if (lastNoseY && nose.y - lastNoseY > 0.015) {
                         isNodding = true;
                         setTimeout(() => isNodding = false, 500);
                     }
@@ -142,27 +174,14 @@
             particles.geometry.attributes.position.needsUpdate = true;
             particles.rotation.y += 0.005;
 
-            // KIỂM TRA ĐIỀU KIỆN: Trái tim bị phá (Exp > 0.8) VÀ có Gật đầu
             const btn = document.getElementById('portal-btn');
-            if (currentExp > 0.8 && isNodding) {
-                btn.classList.add('show');
-            }
-
+            if (currentExp > 0.8 && isNodding) { btn.classList.add('show'); }
             renderer.render(scene, camera);
         }
 
-        // Hàm chuyển code/web
-        window.goToNextStep = function() {
-            // Thay đổi link này thành link web bạn muốn
-            window.location.href = "https://google.com"; 
-            // Hoặc thực hiện hành động khác tại đây
-        };
-
+        window.goToNextStep = function() { window.location.href = "https://google.com"; };
         function loadScript(url) { return new Promise(r => { const s = document.createElement('script'); s.src = url; s.onload = r; document.head.appendChild(s); }); }
 
-        initThree();
-        setupAI();
-        animate();
     </script>
 </body>
 </html>
