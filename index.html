@@ -3,37 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Heart Gesture - Optimized</title>
+    <title>3D Smooth Heart - Fixed Style</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
         #canvas-container { width: 100vw; height: 100vh; }
         #video-container {
             position: absolute; bottom: 20px; right: 20px;
-            width: 180px; height: 135px; border-radius: 10px;
-            overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.2);
-            transform: scaleX(-1); z-index: 10;
+            width: 160px; height: 120px; border-radius: 8px;
+            overflow: hidden; border: 1px solid #f59cff;
+            transform: scaleX(-1); opacity: 0.6;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         .ui-overlay {
-            position: absolute; top: 20px; left: 20px; color: #ff3366;
-            pointer-events: none; z-index: 5;
-        }
-        .instructions {
-            position: absolute; bottom: 20px; left: 20px; color: white;
-            font-size: 0.8rem; opacity: 0.6; line-height: 1.5;
+            position: absolute; top: 20px; left: 20px; color: #f59cff;
+            pointer-events: none; text-shadow: 0 0 10px rgba(245, 156, 255, 0.5);
         }
     </style>
 </head>
 <body>
 
     <div class="ui-overlay">
-        <h2 style="margin:0; letter-spacing: 2px;">HEART CORE v2</h2>
-        <div id="status" style="color: white; font-size: 0.7rem;">Đang khởi tạo camera...</div>
-    </div>
-
-    <div class="instructions">
-        • Kéo xa/gần 2 tay: Co giãn trái tim<br>
-        • Xoay 2 tay (như lái xe): Xoay trái tim
+        <h2 style="margin:0; font-weight: 300; letter-spacing: 4px;">SMOOTH HEART</h2>
+        <p id="status" style="color: white; font-size: 0.7rem; opacity: 0.5;">Đang đợi camera...</p>
     </div>
 
     <div id="video-container">
@@ -45,33 +36,31 @@
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
             }
         }
     </script>
 
     <script type="module">
         import * as THREE from 'three';
-        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
-        // Cấu hình
-        let scene, camera, renderer, particles, points;
-        const PARTICLE_COUNT = 6000; // Giảm nhẹ số lượng để mượt hơn trên máy yếu
+        let scene, camera, renderer, particles;
         let particleData = [];
-        let targetExpansion = 0, currentExpansion = 0;
-        let targetRotation = 0, currentRotation = 0;
+        const PARTICLE_COUNT = 7000;
         
-        const settings = { color: 0xff1e56, size: 0.035, rotationSpeed: 0.01 };
+        // Trạng thái điều khiển
+        let targetExp = 0, currentExp = 0;
+        let targetRotZ = 0, currentRotZ = 0;
+        let targetRotY = 0, currentRotY = 0;
 
         function initThree() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 4;
+            camera.position.z = 4.5;
 
-            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+            renderer.setPixelRatio(window.devicePixelRatio);
             document.getElementById('canvas-container').appendChild(renderer.domElement);
 
             const geo = new THREE.BufferGeometry();
@@ -83,16 +72,16 @@
                 const y = (Math.random() - 0.5) * 3;
                 const z = (Math.random() - 0.5) * 3;
 
-                // Phương trình trái tim từ ảnh của bạn
                 const x2 = x*x, y2 = y*y, z2 = z*z;
+                // Phương trình: (x^2 + 9/4y^2 + z^2 - 1)^3 - x^2z^3 - 9/80y^2z^3 = 0
                 const f = Math.pow(x2 + 2.25*y2 + z2 - 1, 3) - x2*Math.pow(z, 3) - 0.1125*y2*Math.pow(z, 3);
 
                 if (f < 0) {
                     particleData.push({
                         hx: x, hy: z, hz: y,
-                        rx: (Math.random() - 0.5) * 12,
-                        ry: (Math.random() - 0.5) * 12,
-                        rz: (Math.random() - 0.5) * 12
+                        rx: (Math.random() - 0.5) * 15,
+                        ry: (Math.random() - 0.5) * 15,
+                        rz: (Math.random() - 0.5) * 15
                     });
                     count++;
                 }
@@ -100,19 +89,16 @@
 
             geo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
             const mat = new THREE.PointsMaterial({
-                color: settings.color,
-                size: settings.size,
+                color: 0xf59cff,
+                size: 0.03,
                 transparent: true,
                 blending: THREE.AdditiveBlending,
-                depthWrite: false
+                depthWrite: false,
+                opacity: 0.8
             });
 
             particles = new THREE.Points(geo, mat);
             scene.add(particles);
-
-            const gui = new GUI();
-            gui.addColor(settings, 'color').name('Màu sắc').onChange(v => mat.color.set(v));
-            gui.add(settings, 'size', 0.01, 0.1).name('Cỡ hạt').onChange(v => mat.size = v);
 
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
@@ -123,8 +109,8 @@
 
         async function setupMediaPipe() {
             const videoElement = document.getElementById('webcam');
-            const status = document.getElementById('status');
-
+            
+            // Load MediaPipe scripts
             await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js");
             await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js");
 
@@ -134,28 +120,31 @@
 
             hands.setOptions({
                 maxNumHands: 2,
-                modelComplexity: 0, // 0 để nhanh hơn, giảm lag
+                modelComplexity: 0,
                 minDetectionConfidence: 0.5,
                 minTrackingConfidence: 0.5
             });
 
             hands.onResults(results => {
+                const status = document.getElementById('status');
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length >= 2) {
-                    status.innerText = "Đã nhận diện 2 tay";
+                    status.innerText = "Đã kết nối 2 tay - Xoay để điều khiển";
                     const h1 = results.multiHandLandmarks[0][0];
                     const h2 = results.multiHandLandmarks[1][0];
 
-                    // 1. Xử lý Co giãn (Khoảng cách)
+                    // Khoảng cách (Co giãn)
                     const dist = Math.hypot(h1.x - h2.x, h1.y - h2.y);
-                    targetExpansion = THREE.MathUtils.mapLinear(dist, 0.2, 0.7, 0, 1);
-                    targetExpansion = THREE.MathUtils.clamp(targetExpansion, 0, 1);
+                    targetExp = THREE.MathUtils.clamp((dist - 0.2) / 0.5, 0, 1);
 
-                    // 2. Xử lý Xoay (Góc giữa 2 tay)
-                    // Tính góc của đường thẳng nối 2 cổ tay
-                    targetRotation = Math.atan2(h2.y - h1.y, h2.x - h1.x);
+                    // Góc (Xoay Z)
+                    targetRotZ = Math.atan2(h2.y - h1.y, h2.x - h1.x);
+                    
+                    // Vị trí trung bình (Xoay Y nhẹ)
+                    targetRotY = ((h1.x + h2.x) / 2 - 0.5) * 2;
                 } else {
-                    status.innerText = "Hãy giơ 2 tay lên";
-                    targetExpansion = 0;
+                    status.innerText = "Hãy giơ 2 bàn tay lên";
+                    targetExp = 0;
+                    targetRotY = 0;
                 }
             });
 
@@ -169,9 +158,10 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // Làm mượt các giá trị điều khiển (Lerping)
-            currentExpansion = THREE.MathUtils.lerp(currentExpansion, targetExpansion, 0.08);
-            currentRotation = THREE.MathUtils.lerp(currentRotation, targetRotation, 0.1);
+            // Nội suy mượt mà hơn (Lerp)
+            currentExp = THREE.MathUtils.lerp(currentExp, targetExp, 0.05);
+            currentRotZ = THREE.MathUtils.lerp(currentRotZ, targetRotZ, 0.07);
+            currentRotY = THREE.MathUtils.lerp(currentRotY, targetRotY, 0.05);
 
             const positions = particles.geometry.attributes.position.array;
             
@@ -179,21 +169,21 @@
                 const d = particleData[i];
                 const i3 = i * 3;
 
-                const tx = THREE.MathUtils.lerp(d.hx, d.rx, currentExpansion);
-                const ty = THREE.MathUtils.lerp(d.hy, d.ry, currentExpansion);
-                const tz = THREE.MathUtils.lerp(d.hz, d.rz, currentExpansion);
+                const tx = THREE.MathUtils.lerp(d.hx, d.rx, currentExp);
+                const ty = THREE.MathUtils.lerp(d.hy, d.ry, currentExp);
+                const tz = THREE.MathUtils.lerp(d.hz, d.rz, currentExp);
 
-                // Di chuyển hạt tới vị trí mục tiêu một cách mượt mà
-                positions[i3] += (tx - positions[i3]) * 0.15;
-                positions[i3+1] += (ty - positions[i3+1]) * 0.15;
-                positions[i3+2] += (tz - positions[i3+2]) * 0.15;
+                // Di chuyển hạt mượt mà
+                positions[i3] += (tx - positions[i3]) * 0.1;
+                positions[i3+1] += (ty - positions[i3+1]) * 0.1;
+                positions[i3+2] += (tz - positions[i3+2]) * 0.1;
             }
 
             particles.geometry.attributes.position.needsUpdate = true;
             
-            // Áp dụng xoay cho toàn bộ hệ thống hạt
-            particles.rotation.z = currentRotation; 
-            particles.rotation.y += settings.rotationSpeed; // Luôn xoay nhẹ tự động
+            // Áp dụng xoay
+            particles.rotation.z = currentRotZ;
+            particles.rotation.y = currentRotY + (Date.now() * 0.0005); // Tự quay nhẹ + xoay theo tay
 
             renderer.render(scene, camera);
         }
