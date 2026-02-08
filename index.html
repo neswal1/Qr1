@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Smooth Heart - Fixed Style</title>
+    <title>3D Heart with Head Nod Control</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
         #canvas-container { width: 100vw; height: 100vh; }
@@ -11,12 +11,34 @@
             position: absolute; bottom: 20px; right: 20px;
             width: 160px; height: 120px; border-radius: 8px;
             overflow: hidden; border: 1px solid #f59cff;
-            transform: scaleX(-1); opacity: 0.6;
+            transform: scaleX(-1); opacity: 0.6; z-index: 10;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         .ui-overlay {
             position: absolute; top: 20px; left: 20px; color: #f59cff;
-            pointer-events: none; text-shadow: 0 0 10px rgba(245, 156, 255, 0.5);
+            pointer-events: none; text-shadow: 0 0 10px rgba(245, 156, 255, 0.5); z-index: 10;
+        }
+        #status { color: white; font-size: 0.7rem; opacity: 0.5; margin-top: 5px; }
+        #switchButton {
+            position: absolute;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            background-color: #f59cff;
+            color: #000;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(245, 156, 255, 0.8);
+            display: none; /* Ban đầu ẩn */
+            transition: all 0.3s ease-in-out;
+            pointer-events: auto; /* Cho phép click */
+            z-index: 100;
+        }
+        #switchButton:hover {
+            background-color: #e07aff;
+            box-shadow: 0 0 30px rgba(245, 156, 255, 1);
         }
     </style>
 </head>
@@ -24,8 +46,11 @@
 
     <div class="ui-overlay">
         <h2 style="margin:0; font-weight: 300; letter-spacing: 4px;">SMOOTH HEART</h2>
-        <p id="status" style="color: white; font-size: 0.7rem; opacity: 0.5;">Đang đợi camera...</p>
+        <p id="status">Đang đợi camera...</p>
+        <p id="headNodStatus" style="color: yellow; font-size: 0.7rem; opacity: 0.8;"></p>
     </div>
+
+    <button id="switchButton">GẬT ĐẦU ĐỂ TIẾP TỤC</button>
 
     <div id="video-container">
         <video id="webcam" autoplay playsinline></video>
@@ -48,10 +73,22 @@
         let particleData = [];
         const PARTICLE_COUNT = 7000;
         
-        // Trạng thái điều khiển
         let targetExp = 0, currentExp = 0;
         let targetRotZ = 0, currentRotZ = 0;
         let targetRotY = 0, currentRotY = 0;
+
+        // Trạng thái Gật đầu
+        let faceMesh;
+        let lastNoseY = 0;
+        let nodThreshold = 0.02; // Ngưỡng thay đổi Y để phát hiện gật đầu
+        let nodDetected = false;
+        let nodCooldown = false;
+        const COOLDOWN_TIME = 1000; // 1 giây
+
+        // Các phần tử UI
+        const statusElement = document.getElementById('status');
+        const headNodStatusElement = document.getElementById('headNodStatus');
+        const switchButton = document.getElementById('switchButton');
 
         function initThree() {
             scene = new THREE.Scene();
@@ -73,7 +110,6 @@
                 const z = (Math.random() - 0.5) * 3;
 
                 const x2 = x*x, y2 = y*y, z2 = z*z;
-                // Phương trình: (x^2 + 9/4y^2 + z^2 - 1)^3 - x^2z^3 - 9/80y^2z^3 = 0
                 const f = Math.pow(x2 + 2.25*y2 + z2 - 1, 3) - x2*Math.pow(z, 3) - 0.1125*y2*Math.pow(z, 3);
 
                 if (f < 0) {
@@ -105,60 +141,101 @@
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
+            
+            switchButton.addEventListener('click', () => {
+                alert('Chuyển sang code khác hoặc trang mới!');
+                // Ví dụ: window.location.href = 'other_page.html';
+            });
         }
 
         async function setupMediaPipe() {
             const videoElement = document.getElementById('webcam');
             
-            // Load MediaPipe scripts
             await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js");
             await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js");
+            await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"); // Tải Face Mesh
 
+            // Cấu hình Hands
             const hands = new window.Hands({
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
             });
+            hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+            hands.onResults(onHandsResults);
 
-            hands.setOptions({
-                maxNumHands: 2,
-                modelComplexity: 0,
+            // Cấu hình Face Mesh
+            faceMesh = new window.FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
                 minDetectionConfidence: 0.5,
                 minTrackingConfidence: 0.5
             });
-
-            hands.onResults(results => {
-                const status = document.getElementById('status');
-                if (results.multiHandLandmarks && results.multiHandLandmarks.length >= 2) {
-                    status.innerText = "Đã kết nối 2 tay - Xoay để điều khiển";
-                    const h1 = results.multiHandLandmarks[0][0];
-                    const h2 = results.multiHandLandmarks[1][0];
-
-                    // Khoảng cách (Co giãn)
-                    const dist = Math.hypot(h1.x - h2.x, h1.y - h2.y);
-                    targetExp = THREE.MathUtils.clamp((dist - 0.2) / 0.5, 0, 1);
-
-                    // Góc (Xoay Z)
-                    targetRotZ = Math.atan2(h2.y - h1.y, h2.x - h1.x);
-                    
-                    // Vị trí trung bình (Xoay Y nhẹ)
-                    targetRotY = ((h1.x + h2.x) / 2 - 0.5) * 2;
-                } else {
-                    status.innerText = "Hãy giơ 2 bàn tay lên";
-                    targetExp = 0;
-                    targetRotY = 0;
-                }
-            });
+            faceMesh.onResults(onFaceResults);
 
             const cameraPipe = new window.Camera(videoElement, {
-                onFrame: async () => { await hands.send({image: videoElement}); },
+                onFrame: async () => {
+                    await hands.send({image: videoElement});
+                    await faceMesh.send({image: videoElement}); // Gửi frame cho Face Mesh
+                },
                 width: 480, height: 360
             });
             cameraPipe.start();
         }
 
+        function onHandsResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length >= 2) {
+                statusElement.innerText = "Đã kết nối 2 tay - Xoay để điều khiển";
+                const h1 = results.multiHandLandmarks[0][0];
+                const h2 = results.multiHandLandmarks[1][0];
+
+                const dist = Math.hypot(h1.x - h2.x, h1.y - h2.y);
+                targetExp = THREE.MathUtils.clamp((dist - 0.2) / 0.5, 0, 1);
+                targetRotZ = Math.atan2(h2.y - h1.y, h2.x - h1.x);
+                targetRotY = ((h1.x + h2.x) / 2 - 0.5) * 2;
+            } else {
+                statusElement.innerText = "Hãy giơ 2 bàn tay lên";
+                targetExp = 0;
+                targetRotY = 0;
+            }
+        }
+
+        function onFaceResults(results) {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                // Điểm 1 là đỉnh mũi, điểm 152 là cằm dưới
+                const noseTip = landmarks[1]; 
+                const chin = landmarks[152];
+
+                if (lastNoseY === 0) { // Khởi tạo giá trị đầu tiên
+                    lastNoseY = noseTip.y;
+                }
+
+                // Phát hiện gật đầu: thay đổi vị trí Y của mũi/cằm
+                const deltaY = noseTip.y - lastNoseY;
+                
+                if (Math.abs(deltaY) > nodThreshold && !nodCooldown) {
+                    if (deltaY > 0) { // Gật xuống
+                        headNodStatusElement.innerText = "Gật đầu được phát hiện!";
+                        nodDetected = true;
+                        nodCooldown = true;
+                        setTimeout(() => {
+                            nodCooldown = false;
+                            headNodStatusElement.innerText = "";
+                        }, COOLDOWN_TIME);
+                    }
+                }
+                lastNoseY = noseTip.y;
+            } else {
+                headNodStatusElement.innerText = "Không thấy khuôn mặt";
+                lastNoseY = 0; // Reset khi không thấy mặt
+            }
+        }
+
         function animate() {
             requestAnimationFrame(animate);
 
-            // Nội suy mượt mà hơn (Lerp)
             currentExp = THREE.MathUtils.lerp(currentExp, targetExp, 0.05);
             currentRotZ = THREE.MathUtils.lerp(currentRotZ, targetRotZ, 0.07);
             currentRotY = THREE.MathUtils.lerp(currentRotY, targetRotY, 0.05);
@@ -173,7 +250,6 @@
                 const ty = THREE.MathUtils.lerp(d.hy, d.ry, currentExp);
                 const tz = THREE.MathUtils.lerp(d.hz, d.rz, currentExp);
 
-                // Di chuyển hạt mượt mà
                 positions[i3] += (tx - positions[i3]) * 0.1;
                 positions[i3+1] += (ty - positions[i3+1]) * 0.1;
                 positions[i3+2] += (tz - positions[i3+2]) * 0.1;
@@ -181,9 +257,21 @@
 
             particles.geometry.attributes.position.needsUpdate = true;
             
-            // Áp dụng xoay
             particles.rotation.z = currentRotZ;
-            particles.rotation.y = currentRotY + (Date.now() * 0.0005); // Tự quay nhẹ + xoay theo tay
+            particles.rotation.y = currentRotY + (Date.now() * 0.0005); 
+
+            // Logic hiển thị nút và kích hoạt gật đầu
+            if (currentExp > 0.95 && !switchButton.style.display) { // Nếu trái tim đã bung gần hết
+                switchButton.style.display = 'block'; // Hiển thị nút
+            } else if (currentExp < 0.95 && switchButton.style.display === 'block') {
+                switchButton.style.display = 'none'; // Ẩn nút nếu trái tim co lại
+                nodDetected = false; // Reset trạng thái gật đầu
+            }
+
+            if (switchButton.style.display === 'block' && nodDetected) {
+                switchButton.click(); // Kích hoạt sự kiện click nút khi gật đầu
+                nodDetected = false; // Reset để không kích hoạt liên tục
+            }
 
             renderer.render(scene, camera);
         }
