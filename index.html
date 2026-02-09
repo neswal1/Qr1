@@ -1,187 +1,150 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Heart Gesture & Head Nod</title>
+    <title>Interactive 3D Particle System with Three.js</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        
-        /* Giao diện nhập mật khẩu */
-        #password-screen {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #000; display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 9999;
-            transition: opacity 0.8s ease;
-        }
-        #password-screen input {
-            padding: 12px 20px; font-size: 1.2rem; border-radius: 30px;
-            border: 1px solid #f59cff; background: rgba(245, 156, 255, 0.1);
-            color: #f59cff; outline: none; text-align: center; width: 250px;
-            box-shadow: 0 0 15px rgba(245, 156, 255, 0.2);
-        }
-        #password-screen p { color: #f59cff; letter-spacing: 2px; margin-bottom: 20px; font-size: 0.9rem; }
-
-        #canvas-container { width: 100vw; height: 100vh; }
-        #video-container {
-            position: absolute; bottom: 20px; right: 20px;
-            width: 160px; height: 120px; border-radius: 8px;
-            overflow: hidden; border: 1px solid #f59cff;
-            transform: scaleX(-1); opacity: 0.6;
-        }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        
-        #portal-btn {
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%) scale(0);
-            padding: 20px 40px; background: rgba(245, 156, 255, 0.2);
-            color: #f59cff; border: 2px solid #f59cff; border-radius: 50px;
-            font-size: 1.5rem; cursor: pointer; backdrop-filter: blur(10px);
-            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 100; display: none; text-transform: uppercase;
-            letter-spacing: 2px; box-shadow: 0 0 30px rgba(245, 156, 255, 0.4);
-        }
-        #portal-btn.show { display: block; transform: translate(-50%, -50%) scale(1); }
-        .ui-overlay { position: absolute; top: 20px; left: 20px; color: #f59cff; pointer-events: none; z-index: 10; }
+        body { margin: 0; overflow: hidden; background: #000; }
+        canvas { display: block; }
+        #color-picker { position: absolute; top: 10px; right: 10px; z-index: 10; }
+        #video { display: none; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.1/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js"></script>
 </head>
 <body>
+    <input type="color" id="color-picker" value="#ffffff">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
 
-    <div id="password-screen">
-        <p>IDENTIFICATION REQUIRED</p>
-        <input type="password" id="pw-input" placeholder="Nhập mật khẩu..." autofocus>
-        <div id="error-msg" style="color: red; font-size: 0.8rem; margin-top: 10px; display: none;">Mật khẩu sai rồi!</div>
-    </div>
+    <script>
+        // Three.js setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas') });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
 
-    <div class="ui-overlay">
-        <h2 style="margin:0; font-weight: 300;">HEART CORE</h2>
-        <p id="hint" style="color: white; font-size: 0.8rem;">Phá trái tim & Gật đầu để mở Cổng</p>
-    </div>
+        // Particles
+        const particleCount = 5000;
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const targetPositions = new Float32Array(particleCount * 3); // For interpolation
+        const material = new THREE.PointsMaterial({ size: 0.05, color: 0xffffff });
+        const particles = new THREE.Points(geometry, material);
+        scene.add(particles);
 
-    <button id="portal-btn" onclick="goToNextStep()">MỞ CODE MỚI</button>
+        // Initialize positions as a sphere (collapsed state)
+        const radius = 5;
+        for (let i = 0; i < particleCount; i++) {
+            const theta = Math.acos(2 * Math.random() - 1);
+            const phi = 2 * Math.PI * Math.random();
+            positions[i * 3] = radius * Math.sin(theta) * Math.cos(phi);
+            positions[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+            positions[i * 3 + 2] = radius * Math.cos(theta);
+            targetPositions[i * 3] = positions[i * 3];
+            targetPositions[i * 3 + 1] = positions[i * 3 + 1];
+            targetPositions[i * 3 + 2] = positions[i * 3 + 2];
+        }
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-    <div id="video-container"><video id="webcam" autoplay playsinline></video></div>
-    <div id="canvas-container"></div>
+        camera.position.z = 15;
 
-    <script type="importmap">
-        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
-    </script>
+        // Color picker
+        const colorPicker = document.getElementById('color-picker');
+        colorPicker.addEventListener('input', (e) => {
+            material.color.set(e.target.value);
+        });
 
-    <script type="module">
-        import * as THREE from 'three';
+        // MediaPipe Hands setup
+        const videoElement = document.getElementById('video');
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${file}`
+        });
+        hands.setOptions({
+            maxNumHands: 1, // Only one hand
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
 
-        // CẤU HÌNH MẬT KHẨU TẠI ĐÂY
-        const SECRET_KEY = "123"; 
+        let handOpenness = 0; // 0: closed, 1: open
 
-        const pwInput = document.getElementById('pw-input');
-        const pwScreen = document.getElementById('password-screen');
-        const errorMsg = document.getElementById('error-msg');
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                // Detect hand openness: distance between thumb tip (4) and index finger tip (8)
+                // Also check middle (12), ring (16), pinky (20) to wrist (0) for better detection
+                const thumbTip = landmarks[4];
+                const indexTip = landmarks[8];
+                const middleTip = landmarks[12];
+                const ringTip = landmarks[16];
+                const pinkyTip = landmarks[20];
+                const wrist = landmarks[0];
 
-        pwInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                if (pwInput.value === SECRET_KEY) {
-                    startExperience();
-                } else {
-                    errorMsg.style.display = 'block';
-                    pwInput.value = '';
+                const distThumbIndex = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y, thumbTip.z - indexTip.z);
+                const distIndexWrist = Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y, indexTip.z - wrist.z);
+                const distMiddleWrist = Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y, middleTip.z - wrist.z);
+                const distRingWrist = Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y, ringTip.z - wrist.z);
+                const distPinkyWrist = Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y, pinkyTip.z - wrist.z);
+
+                // Simple heuristic: if fingers are extended (dist to wrist > threshold) and thumb-index apart
+                const fingerExtendedThreshold = 0.2; // Normalized distance
+                const openCount = [distIndexWrist, distMiddleWrist, distRingWrist, distPinkyWrist].filter(d => d > fingerExtendedThreshold).length;
+                const isOpen = openCount >= 3 && distThumbIndex > 0.05;
+
+                handOpenness = isOpen ? 1 : 0; // Binary for simplicity, or lerp for smoothness
+
+                // Update target positions based on openness
+                const expandRadius = 20; // Expanded state radius
+                for (let i = 0; i < particleCount; i++) {
+                    const baseX = positions[i * 3] / radius * expandRadius * handOpenness;
+                    const baseY = positions[i * 3 + 1] / radius * expandRadius * handOpenness;
+                    const baseZ = positions[i * 3 + 2] / radius * expandRadius * handOpenness;
+                    targetPositions[i * 3] = baseX + (1 - handOpenness) * positions[i * 3];
+                    targetPositions[i * 3 + 1] = baseY + (1 - handOpenness) * positions[i * 3 + 1];
+                    targetPositions[i * 3 + 2] = baseZ + (1 - handOpenness) * positions[i * 3 + 2];
                 }
+            } else {
+                handOpenness = 0; // Default to closed if no hand detected
             }
         });
 
-        let scene, camera, renderer, particles;
-        let particleData = [];
-        const PARTICLE_COUNT = 7000;
-        let targetExp = 0, currentExp = 0, lastNoseY = 0, isNodding = false;
+        // Camera setup
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+        cameraUtils.start();
 
-        function startExperience() {
-            pwScreen.style.opacity = '0';
-            setTimeout(() => {
-                pwScreen.style.display = 'none';
-                initThree();
-                setupAI();
-                animate();
-            }, 800);
-        }
-
-        function initThree() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 4.5;
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
-
-            const geo = new THREE.BufferGeometry();
-            const posArray = new Float32Array(PARTICLE_COUNT * 3);
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
-                const x = (Math.random() - 0.5) * 3, y = (Math.random() - 0.5) * 3, z = (Math.random() - 0.5) * 3;
-                const f = Math.pow(x*x + 2.25*y*y + z*z - 1, 3) - x*x*Math.pow(z, 3) - 0.1125*y*y*Math.pow(z, 3);
-                if (f < 0) {
-                    particleData.push({hx: x, hy: z, hz: y, rx: (Math.random()-0.5)*15, ry: (Math.random()-0.5)*15, rz: (Math.random()-0.5)*15});
-                }
-            }
-            geo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-            particles = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xf59cff, size: 0.03, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-            scene.add(particles);
-        }
-
-        async function setupAI() {
-            await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js");
-            await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js");
-            await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js");
-
-            const video = document.getElementById('webcam');
-            const hands = new window.Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-            const faceMesh = new window.FaceMesh({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
-
-            hands.setOptions({ maxNumHands: 2, modelComplexity: 0 });
-            faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5 });
-
-            hands.onResults(res => {
-                if (res.multiHandLandmarks && res.multiHandLandmarks.length >= 2) {
-                    const d = Math.hypot(res.multiHandLandmarks[0][0].x - res.multiHandLandmarks[1][0].x, res.multiHandLandmarks[0][0].y - res.multiHandLandmarks[1][0].y);
-                    targetExp = THREE.MathUtils.clamp((d - 0.2) / 0.5, 0, 1);
-                } else { targetExp = 0; }
-            });
-
-            faceMesh.onResults(res => {
-                if (res.multiFaceLandmarks && res.multiFaceLandmarks[0]) {
-                    const nose = res.multiFaceLandmarks[0][1];
-                    if (lastNoseY && nose.y - lastNoseY > 0.015) {
-                        isNodding = true;
-                        setTimeout(() => isNodding = false, 500);
-                    }
-                    lastNoseY = nose.y;
-                }
-            });
-
-            new window.Camera(video, { onFrame: async () => { 
-                await hands.send({image: video}); 
-                await faceMesh.send({image: video}); 
-            }, width: 480, height: 360 }).start();
-        }
-
+        // Animation loop
         function animate() {
             requestAnimationFrame(animate);
-            currentExp = THREE.MathUtils.lerp(currentExp, targetExp, 0.05);
-            const pos = particles.geometry.attributes.position.array;
-            for (let i = 0; i < particleData.length; i++) {
-                const d = particleData[i], i3 = i * 3;
-                pos[i3] += (THREE.MathUtils.lerp(d.hx, d.rx, currentExp) - pos[i3]) * 0.1;
-                pos[i3+1] += (THREE.MathUtils.lerp(d.hy, d.ry, currentExp) - pos[i3+1]) * 0.1;
-                pos[i3+2] += (THREE.MathUtils.lerp(d.hz, d.rz, currentExp) - pos[i3+2]) * 0.1;
-            }
-            particles.geometry.attributes.position.needsUpdate = true;
-            particles.rotation.y += 0.005;
 
-            const btn = document.getElementById('portal-btn');
-            if (currentExp > 0.8 && isNodding) { btn.classList.add('show'); }
+            // Interpolate positions towards targets for smooth transition
+            const positionsAttr = geometry.getAttribute('position');
+            for (let i = 0; i < particleCount * 3; i++) {
+                positionsAttr.array[i] += (targetPositions[i] - positionsAttr.array[i]) * 0.1; // Lerp factor
+            }
+            positionsAttr.needsUpdate = true;
+
+            // Rotate the particle system slightly for visual interest
+            particles.rotation.y += 0.001;
+
             renderer.render(scene, camera);
         }
-
-        window.goToNextStep = function() { window.location.href = "https://google.com"; };
-        function loadScript(url) { return new Promise(r => { const s = document.createElement('script'); s.src = url; s.onload = r; document.head.appendChild(s); }); }
-
+        animate();
     </script>
 </body>
 </html>
