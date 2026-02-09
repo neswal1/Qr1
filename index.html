@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate Heart - Fixed & Smooth</title>
+    <title>1-Hand Heart Control</title>
     <style>
         body { margin: 0; overflow: hidden; background: #fff0f5; font-family: 'Segoe UI', sans-serif; }
         #password-screen {
             position: fixed; inset: 0; background: #ffc0cb; display: flex;
             flex-direction: column; justify-content: center; align-items: center;
-            z-index: 1000; transition: 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000; transition: 0.6s;
         }
         input { 
             padding: 12px 25px; border-radius: 25px; border: 2px solid #ff69b4;
@@ -22,23 +22,23 @@
             box-shadow: 0 4px 15px rgba(255, 105, 180, 0.4); font-weight: bold;
         }
         #portal-btn.show { transform: translateX(-50%) scale(1); }
-        #webcam { display: none; } /* Ẩn camera theo ý bạn */
+        #webcam { display: none; } 
         .ui { position: absolute; top: 20px; width: 100%; text-align: center; color: #ff69b4; pointer-events: none; }
     </style>
 </head>
 <body>
 
     <div id="password-screen">
-        <p style="color: white; letter-spacing: 2px; margin-bottom: 15px;">mật khẩu🧐</p>
-        <input type="password" id="pw" placeholder="Nhập mật khẩu..." autofocus>
+        <p style="color: white; letter-spacing: 2px; margin-bottom: 15px;">PASS: 123</p>
+        <input type="password" id="pw" placeholder="Mở khóa..." autofocus>
     </div>
 
     <div class="ui">
-        <h2 style="margin:0; font-weight: 300;">BEATING HEART</h2>
-        <p style="font-size: 0.8rem; opacity: 0.7;">Dùng 2 tay kéo dãn để phá vỡ có bất ngờ </p>
+        <h2 style="margin:0; font-weight: 300;">ONE HAND CONTROL</h2>
+        <p style="font-size: 0.8rem; opacity: 0.7;">Mở rộng bàn tay để phá vỡ</p>
     </div>
 
-    <button id="portal-btn" onclick="location.href='https://google.com'">💌→</button>
+    <button id="portal-btn" onclick="location.href='https://google.com'">TIẾP TỤC →</button>
     <video id="webcam" autoplay playsinline></video>
     <div id="canvas-container"></div>
 
@@ -50,7 +50,7 @@
         import * as THREE from 'three';
 
         const SECRET = "123";
-        const COUNT = 12000; 
+        const COUNT = 10000; 
         let scene, camera, renderer, points, data = [];
         let tExp = 0, cExp = 0;
 
@@ -61,7 +61,7 @@
                     document.getElementById('password-screen').remove();
                     init();
                     setupAI();
-                }, 600);
+                }, 500);
             }
         });
 
@@ -78,25 +78,18 @@
             const pos = new Float32Array(COUNT * 3);
 
             for (let i = 0; i < COUNT; i++) {
-                // Tạo điểm dựa trên phương trình X^(2/3) + 0.9 sin(80x) sqrt(3-x^2)
-                const x = (Math.random() - 0.5) * 3.46; // sqrt(3) * 2
+                const x = (Math.random() - 0.5) * 3.46; 
                 const heartY = Math.pow(Math.abs(x), 2/3) + 0.9 * Math.sin(80 * x) * Math.sqrt(3 - x * x);
-                
-                // Thêm một chút nhiễu quanh biên để trái tim có độ dày
-                const off = (Math.random() - 0.5) * 0.2;
-                const finalY = heartY + off;
-                const finalZ = (Math.random() - 0.5) * 0.5;
+                const off = (Math.random() - 0.5) * 0.15;
 
                 data.push({
-                    hx: x, hy: finalY - 0.5, hz: finalZ,
+                    hx: x, hy: heartY + off - 0.5, hz: (Math.random() - 0.5) * 0.5,
                     rx: (Math.random()-0.5)*15, ry: (Math.random()-0.5)*15, rz: (Math.random()-0.5)*15
                 });
             }
 
             geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            points = new THREE.Points(geo, new THREE.PointsMaterial({ 
-                color: 0xff69b4, size: 0.025, transparent: true, opacity: 0.8 
-            }));
+            points = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xff69b4, size: 0.025 }));
             scene.add(points);
             loop();
         }
@@ -108,11 +101,18 @@
             ]);
 
             const hands = new window.Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-            hands.setOptions({ maxNumHands: 2, modelComplexity: 0 });
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 0 }); // Chỉ cần 1 tay
+
             hands.onResults(res => {
-                if (res.multiHandLandmarks?.length >= 2) {
-                    const h1 = res.multiHandLandmarks[0][0], h2 = res.multiHandLandmarks[1][0];
-                    tExp = THREE.MathUtils.clamp((Math.hypot(h1.x - h2.x, h1.y - h2.y) - 0.2) * 2, 0, 1);
+                if (res.multiHandLandmarks?.length > 0) {
+                    const landmarks = res.multiHandLandmarks[0];
+                    // Tính khoảng cách giữa đầu ngón cái (4) và đầu ngón trỏ (8)
+                    const thumbTip = landmarks[4];
+                    const indexTip = landmarks[8];
+                    const dist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+                    
+                    // Ngưỡng: chạm tay (dist nhỏ) -> 0, xòe tay (dist lớn) -> 1
+                    tExp = THREE.MathUtils.clamp((dist - 0.05) * 3, 0, 1);
                 } else tExp = 0;
             });
 
@@ -124,7 +124,7 @@
 
         function loop() {
             requestAnimationFrame(loop);
-            cExp += (tExp - cExp) * 0.08; // Làm mượt chuyển động phá vỡ
+            cExp += (tExp - cExp) * 0.1; 
             const p = points.geometry.attributes.position.array;
             for (let i = 0; i < COUNT; i++) {
                 const d = data[i], i3 = i * 3;
@@ -133,8 +133,6 @@
                 p[i3+2] += (THREE.MathUtils.lerp(d.hz, d.rz, cExp) - p[i3+2]) * 0.12;
             }
             points.geometry.attributes.position.needsUpdate = true;
-            
-            // Xoay nhẹ nhàng, giới hạn góc để không bị quay ra sau
             points.rotation.y = Math.sin(Date.now() * 0.001) * 0.3;
 
             const btn = document.getElementById('portal-btn');
